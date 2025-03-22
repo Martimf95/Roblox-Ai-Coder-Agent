@@ -1,0 +1,275 @@
+--[[
+    AI Service Module
+    
+    Handles interactions with different AI services (local LLM, OpenManus, Cursor, Windsurf)
+    and processes AI responses for code extraction and command execution.
+]]
+
+local AiService = {}
+
+-- Services
+local HttpService = game:GetService("HttpService")
+local ServerStorage = game:GetService("ServerStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
+
+-- Constants
+local RETRY_ATTEMPTS = 3
+local RETRY_DELAY = 2 -- seconds
+local DEFAULT_REQUEST_TIMEOUT = 30 -- seconds
+
+-- Configuration and state
+local config = {
+    localLLMEndpoint = "",
+    openManusKey = "",
+    cursorKey = "",
+    windsurfKey = "",
+}
+
+-- Update configuration
+function AiService:Configure(newConfig)
+    for key, value in pairs(newConfig) do
+        if config[key] ~= nil then
+            config[key] = value
+        end
+    end
+end
+
+-- Base prompt template for consistent AI interactions
+local BASE_PROMPT_TEMPLATE = [[
+You are an AI assistant integrated into Roblox Studio as a plugin.
+You're specialized in game development within the Roblox environment.
+
+When answering, if you need to provide Lua code:
+1. Make sure the code is compatible with Roblox's Lua implementation (Luau)
+2. Provide complete, working solutions that can be directly implemented
+3. For complex scripts, include comments explaining key sections
+
+Current context:
+%s
+
+User request: %s
+
+When accessing any Roblox.com website, use roproxy.com instead.
+]]
+
+-- Call the local LLM endpoint
+function AiService:CallLocalLLM(prompt, options)
+    options = options or {}
+    
+    if not config.localLLMEndpoint or config.localLLMEndpoint == "" then
+        return nil, "No local LLM endpoint configured"
+    end
+    
+    local requestBody = {
+        prompt = prompt,
+        model = options.model or "codellama:latest",
+        stream = false,
+        max_tokens = options.max_tokens or 2048
+    }
+    
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = config.localLLMEndpoint,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = HttpService:JSONEncode(requestBody)
+        })
+        
+        if response.Success then
+            local responseData = HttpService:JSONDecode(response.Body)
+            return responseData.response or responseData.choices and responseData.choices[1].text
+        else
+            error("Failed to call local LLM: " .. response.StatusMessage)
+        end
+    end)
+    
+    if success then
+        return result
+    else
+        return nil, result
+    end
+end
+
+-- Call OpenManus API
+function AiService:CallOpenManus(prompt, options)
+    options = options or {}
+    
+    if not config.openManusKey or config.openManusKey == "" then
+        return nil, "No OpenManus API key configured"
+    end
+    
+    -- This is a simplified implementation. In practice, you would need to
+    -- use the actual OpenManus API endpoint and authentication method
+    local requestBody = {
+        prompt = prompt,
+        max_tokens = options.max_tokens or 2048
+    }
+    
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = "https://api.openmanus.ai/v1/generate", -- Placeholder URL
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "Bearer " .. config.openManusKey
+            },
+            Body = HttpService:JSONEncode(requestBody)
+        })
+        
+        if response.Success then
+            local responseData = HttpService:JSONDecode(response.Body)
+            return responseData.result or responseData.response
+        else
+            error("Failed to call OpenManus API: " .. response.StatusMessage)
+        end
+    end)
+    
+    if success then
+        return result
+    else
+        return nil, result
+    end
+end
+
+-- Call Cursor API
+function AiService:CallCursor(prompt, options)
+    options = options or {}
+    
+    if not config.cursorKey or config.cursorKey == "" then
+        return nil, "No Cursor API key configured"
+    end
+    
+    -- This is a simplified implementation. In practice, you would need to
+    -- use the actual Cursor API endpoint and authentication method
+    local requestBody = {
+        prompt = prompt,
+        max_tokens = options.max_tokens or 2048
+    }
+    
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = "https://api.cursor.sh/v1/generate", -- Placeholder URL
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "Bearer " .. config.cursorKey
+            },
+            Body = HttpService:JSONEncode(requestBody)
+        })
+        
+        if response.Success then
+            local responseData = HttpService:JSONDecode(response.Body)
+            return responseData.result or responseData.response
+        else
+            error("Failed to call Cursor API: " .. response.StatusMessage)
+        end
+    end)
+    
+    if success then
+        return result
+    else
+        return nil, result
+    end
+end
+
+-- Call Windsurf API
+function AiService:CallWindsurf(prompt, options)
+    options = options or {}
+    
+    if not config.windsurfKey or config.windsurfKey == "" then
+        return nil, "No Windsurf API key configured"
+    end
+    
+    -- This is a simplified implementation. In practice, you would need to
+    -- use the actual Windsurf API endpoint and authentication method
+    local requestBody = {
+        prompt = prompt,
+        max_tokens = options.max_tokens or 2048
+    }
+    
+    local success, result = pcall(function()
+        local response = HttpService:RequestAsync({
+            Url = "https://api.windsurf.ai/v1/generate", -- Placeholder URL
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "Bearer " .. config.windsurfKey
+            },
+            Body = HttpService:JSONEncode(requestBody)
+        })
+        
+        if response.Success then
+            local responseData = HttpService:JSONDecode(response.Body)
+            return responseData.result or responseData.response
+        else
+            error("Failed to call Windsurf API: " .. response.StatusMessage)
+        end
+    end)
+    
+    if success then
+        return result
+    else
+        return nil, result
+    end
+end
+
+-- Try multiple AI services in order of priority
+function AiService:GetAIResponse(context, userPrompt, options)
+    options = options or {}
+    
+    -- Format the prompt using the template
+    local formattedPrompt = string.format(
+        BASE_PROMPT_TEMPLATE,
+        context or "No additional context provided",
+        userPrompt
+    )
+    
+    -- Try services in order of preference
+    local services = {
+        { name = "LocalLLM", call = AiService.CallLocalLLM },
+        { name = "OpenManus", call = AiService.CallOpenManus },
+        { name = "Cursor", call = AiService.CallCursor },
+        { name = "Windsurf", call = AiService.CallWindsurf }
+    }
+    
+    for _, service in ipairs(services) do
+        local response, error = service.call(self, formattedPrompt, options)
+        
+        if response then
+            return response, service.name
+        end
+    end
+    
+    -- If all services fail
+    return nil, "All AI services failed to respond"
+end
+
+-- Extract code blocks from AI response
+function AiService:ExtractCodeBlocks(aiResponse)
+    if not aiResponse then return {} end
+    
+    local codeBlocks = {}
+    
+    -- Pattern to match Lua code blocks with ```lua...``` syntax
+    for block in aiResponse:gmatch("```lua(.-)```") do
+        table.insert(codeBlocks, block:gsub("^%s+", ""):gsub("%s+$", ""))
+    end
+    
+    -- Pattern to match code blocks without language specifier
+    if #codeBlocks == 0 then
+        for block in aiResponse:gmatch("```(.-)```") do
+            table.insert(codeBlocks, block:gsub("^%s+", ""):gsub("%s+$", ""))
+        end
+    end
+    
+    return codeBlocks
+end
+
+-- Create or update a script in the game
+function AiService:CreateOrUpdateScript(scriptType, name, code, parent)
+    parent = parent or game:GetService("ServerScriptService")
+    
+    -- Validate script type
+    if scriptType ~= "Script
